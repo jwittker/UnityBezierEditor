@@ -5,8 +5,8 @@ using UnityEngine;
 public class BezierScript : MonoBehaviour
 {
 
-    public int numberControlPoints = 0;
-    private int oldNumberControlPoints = 0;
+    public int numberControlPoints = 2;
+    private int oldNumberControlPoints = 2;
 
     public GameObject controlPointObj;
     public GameObject linePointObj;
@@ -17,18 +17,27 @@ public class BezierScript : MonoBehaviour
     private float maxTime = 1f;
     private float currTime = 0f;
 
-    private Vector3[] controlPoints;
+    private Vector3[] controlPoints = new Vector3[2];
+
+    private bool validControlPoints;
+    private bool controlPointsChanged = true;
+    private bool showBezier = true;
+
 
     // Start is called before the first frame update
     void Start()
     {
-        InitializeControlPositions();
-        ClearPoints();
+        showBezier = false;
+        validControlPoints = InitializeControlPositions();
+
+        ClearPoints(2);
     }
 
     // Update is called once per frame
     void Update()
     {
+        if(!validControlPoints) return;
+
         Vector3 bezierPos = CalculateBezier(numberControlPoints - 1, 0, currTime);
 
         transform.position = bezierPos;
@@ -48,7 +57,8 @@ public class BezierScript : MonoBehaviour
             namePrefix = "L_";
         }
 
-        if(transform.Find("P_0") && oldNumberControlPoints == numberControlPoints) {
+        Transform foundTransform = transform.Find("P_0");
+        if(foundTransform && oldNumberControlPoints == numberControlPoints) {
             // if control points exist already, randomize their position
             for(int i = 0; i < transform.childCount; i++) {
                 if(transform.GetChild(i).gameObject.name.Contains("P")) {
@@ -57,9 +67,9 @@ public class BezierScript : MonoBehaviour
             }
 
         } else {
-            if(oldNumberControlPoints != numberControlPoints && oldNumberControlPoints != 0) {
+            if(oldNumberControlPoints != numberControlPoints && foundTransform) {
                 // only adjust difference in controlPointsCount
-                int difference = numberControlPoints -oldNumberControlPoints;
+                int difference = numberControlPoints - oldNumberControlPoints;
 
                 if(difference > 0) {
                     for(int i = oldNumberControlPoints; i <= oldNumberControlPoints + difference - 1; i++) {
@@ -70,7 +80,10 @@ public class BezierScript : MonoBehaviour
 
                 } else {
                     for(int i = oldNumberControlPoints - 1; i > oldNumberControlPoints + difference - 1; i--) {
-                        DestroyImmediate(transform.Find(namePrefix + i.ToString()).gameObject);
+                        GameObject toDestroy = transform.Find(namePrefix + i.ToString()).gameObject;
+                        if(toDestroy) {
+                            DestroyImmediate(toDestroy);
+                        }
                     }
                 }
 
@@ -85,27 +98,47 @@ public class BezierScript : MonoBehaviour
         }
 
         oldNumberControlPoints = numberControlPoints;
+        controlPointsChanged = true;
     }
 
-    public void ClearPoints() {
-        // TODO: find standard way to do so
-        while(transform.childCount > 0) {
-            DestroyImmediate(transform.GetChild(0).gameObject);
+    public void ClearPoints(int type) {
+        Debug.Log("ClearPoints " + type.ToString());
+        int childIdx = 0;
+        int childCount = transform.childCount;
+        while(childCount > childIdx) {
+            if(type == 2 || (type == 0 && transform.GetChild(childIdx).name.Contains("P_")) || (type == 1 && transform.GetChild(childIdx).name.Contains("L_"))) {
+                DestroyImmediate(transform.GetChild(childIdx).gameObject);
+                childCount--;
+
+            } else {
+                childIdx++;
+            }
         }
 
-        oldNumberControlPoints = 0;
+        // oldNumberControlPoints = 0;
     }
 
-    public void InitializeControlPositions() {
-        if(controlPoints.Length != numberControlPoints) {
+    public bool InitializeControlPositions() {
+        if(transform.childCount == 0 || !transform.Find("P_0")) {
+            return false;
+        }
+
+        if(controlPointsChanged) {
             controlPoints = new Vector3[numberControlPoints];
         }
 
-        for(int i = 0; i < transform.childCount; i++) {
-            if(transform.GetChild(i).gameObject.name.Contains("P")) {
-                controlPoints[i] = transform.GetChild(i).position;
+        int checkSum = 0;
+        for(int i = 0; i < controlPoints.Length; i++) {
+            Transform controlTransform = transform.Find("P_" + i.ToString());
+            if(controlTransform) {
+                controlPoints[i] = controlTransform.position;
+                checkSum++;
             }
         }
+
+        controlPointsChanged = false;
+
+        return checkSum == controlPoints.Length;
     }
 
     // Recursive De Casteljau for Bezier computation
@@ -119,13 +152,37 @@ public class BezierScript : MonoBehaviour
 
     // Build a Bezier Curve with GameObjects to show the user
     public void BuildBezier() {
-        InitializeControlPositions();
-
-        // TODO: move in SpawnPoints
-        for(float t = 0f; t < maxTime; t += 0.1f) {
-            GameObject linePoint = Instantiate(linePointObj, CalculateBezier(numberControlPoints - 1, 0, t), Quaternion.identity);
-            linePoint.transform.parent = transform;
-            linePoint.name = "L_" + (t * 10).ToString();
+        if(!transform.Find("P_0")) {
+            SpawnPoints(0);
         }
+        bool check = InitializeControlPositions();
+
+        if(!check) return;
+
+        for(float t = 0f; t < maxTime; t += 0.1f) {
+            Vector3 bezierPos = CalculateBezier(numberControlPoints - 1, 0, t);
+            Transform lineTransform = transform.Find("L_" + Mathf.Floor(t * 10).ToString());
+            if(lineTransform) {
+                lineTransform.position = bezierPos;
+
+            } else {
+                GameObject linePoint = Instantiate(linePointObj, bezierPos, Quaternion.identity);
+                linePoint.transform.parent = transform;
+                linePoint.name = "L_" + Mathf.Floor(t * 10).ToString();
+            }
+        }
+
+    }
+
+    public int GetOldNumberControlPoints() {
+        return oldNumberControlPoints;
+    }
+
+    public bool GetShowBezier() {
+        return showBezier;
+    }
+
+    public void SetShowBezier(bool b) {
+        showBezier = b;
     }
 }
